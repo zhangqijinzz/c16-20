@@ -18,11 +18,19 @@ export interface CropVariant {
   ratio: string;
 }
 
+export interface SubjectMarker {
+  id: string;
+  x: number;
+  y: number;
+}
+
 export interface FrameDocument {
   version: 1;
   image: ImageAsset | null;
   guides: Record<GuideKey, boolean>;
-  subject: { x: number; y: number } | null;
+  /** @deprecated 旧版单点主体标记，载入时迁移到 subjects */
+  subject?: { x: number; y: number } | null;
+  subjects: SubjectMarker[];
   crop: CropVariant;
   variants: CropVariant[];
 }
@@ -31,6 +39,7 @@ export interface ViewState {
   phase: Phase;
   document: FrameDocument;
   compareOpen: boolean;
+  selectedSubjectId: string | null;
   notice: string;
   error: string | null;
 }
@@ -48,7 +57,7 @@ export const EMPTY_DOCUMENT: FrameDocument = {
   version: 1,
   image: null,
   guides: { thirds: true, center: false, diagonal: false, golden: false },
-  subject: null,
+  subjects: [],
   crop: DEFAULT_CROP,
   variants: [],
 };

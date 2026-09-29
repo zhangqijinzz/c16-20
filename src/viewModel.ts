@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { cropForRatio, makeVariant, moveCrop, resizeCrop } from './domain';
+import { addSubjectMarker, createSubjectId, cropForRatio, makeVariant, moveCrop, moveSubjectMarker, removeSubjectMarker, resizeCrop } from './domain';
 import { EMPTY_DOCUMENT, type FrameDocument, type GuideKey, type Ratio, type ViewState } from './model';
 import type { FrameRepository } from './repository';
 import type { ImageService } from './service';
@@ -7,7 +7,7 @@ import type { ImageService } from './service';
 type Listener = () => void;
 
 export class FrameSenseViewModel {
-  private state: ViewState = { phase: 'loading', document: structuredClone(EMPTY_DOCUMENT), compareOpen: false, notice: '', error: null };
+  private state: ViewState = { phase: 'loading', document: structuredClone(EMPTY_DOCUMENT), compareOpen: false, selectedSubjectId: null, notice: '', error: null };
   private readonly listeners = new Set<Listener>();
 
   constructor(private readonly repository: FrameRepository, private readonly imageService: ImageService) {}
@@ -24,8 +24,8 @@ export class FrameSenseViewModel {
     this.listeners.forEach((listener) => listener());
   }
 
-  private persist(document: FrameDocument, notice: string): void {
-    this.patch({ document, phase: 'editing', notice, error: null });
+  private persist(document: FrameDocument, notice: string, extra: Partial<ViewState> = {}): void {
+    this.patch({ document, phase: 'editing', notice, error: null, ...extra });
     try {
       this.repository.save(document);
     } catch {
@@ -48,14 +48,14 @@ export class FrameSenseViewModel {
     try {
       const image = await this.imageService.readFile(file);
       const document: FrameDocument = { ...structuredClone(EMPTY_DOCUMENT), image };
-      this.persist(document, '图片已载入，可以开始构图。');
+      this.persist(document, '图片已载入，可以开始构图。', { selectedSubjectId: null });
     } catch (error) {
       this.patch({ phase: 'error', error: error instanceof Error ? error.message : '图片载入失败。' });
     }
   }
 
   loadDemo(): void {
-    this.persist({ ...structuredClone(EMPTY_DOCUMENT), image: this.imageService.demo() }, '示例图片已载入。');
+    this.persist({ ...structuredClone(EMPTY_DOCUMENT), image: this.imageService.demo() }, '示例图片已载入。', { selectedSubjectId: null });
   }
 
   toggleGuide(guide: GuideKey): void {
@@ -78,8 +78,31 @@ export class FrameSenseViewModel {
     this.persist({ ...this.state.document, crop: resizeCrop(this.state.document.crop, width, height) }, '裁切范围已调整。');
   }
 
-  markSubject(x: number, y: number): void {
-    this.persist({ ...this.state.document, subject: { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) } }, '主体标记已更新。');
+  addSubject(x: number, y: number): void {
+    const id = createSubjectId();
+    const subjects = addSubjectMarker(this.state.document.subjects, x, y, id);
+    this.persist({ ...this.state.document, subjects }, `已添加主体标记（共 ${subjects.length} 个）。`, { selectedSubjectId: id });
+  }
+
+  selectSubject(id: string | null): void {
+    if (id === this.state.selectedSubjectId) return;
+    this.patch({ selectedSubjectId: id });
+  }
+
+  moveSubject(id: string, x: number, y: number): void {
+    if (!this.state.document.subjects.some((subject) => subject.id === id)) return;
+    const subjects = moveSubjectMarker(this.state.document.subjects, id, x, y);
+    this.persist({ ...this.state.document, subjects }, '主体位置已微调。');
+  }
+
+  removeSubject(id: string): void {
+    const subjects = removeSubjectMarker(this.state.document.subjects, id);
+    this.persist({ ...this.state.document, subjects }, '已删除该主体标记。', { selectedSubjectId: this.state.selectedSubjectId === id ? null : this.state.selectedSubjectId });
+  }
+
+  clearSubjects(): void {
+    if (this.state.document.subjects.length === 0) return;
+    this.persist({ ...this.state.document, subjects: [] }, '已清空全部主体标记。', { selectedSubjectId: null });
   }
 
   saveVariant(): void {
