@@ -9,6 +9,12 @@ export interface ImageAsset {
   name: string;
 }
 
+export interface SubjectPoint {
+  id: string;
+  x: number;
+  y: number;
+}
+
 export interface CropVariant {
   id: string;
   x: number;
@@ -22,7 +28,9 @@ export interface FrameDocument {
   version: 1;
   image: ImageAsset | null;
   guides: Record<GuideKey, boolean>;
-  subject: { x: number; y: number } | null;
+  /** @deprecated 旧版单主体数据，读取后迁移进 subjects，新数据不再写入 */
+  subject?: { x: number; y: number } | null;
+  subjects: SubjectPoint[];
   crop: CropVariant;
   variants: CropVariant[];
 }
@@ -31,6 +39,7 @@ export interface ViewState {
   phase: Phase;
   document: FrameDocument;
   compareOpen: boolean;
+  selectedSubjectId: string | null;
   notice: string;
   error: string | null;
 }
@@ -48,7 +57,8 @@ export const EMPTY_DOCUMENT: FrameDocument = {
   version: 1,
   image: null,
   guides: { thirds: true, center: false, diagonal: false, golden: false },
-  subject: null,
+  subject: undefined,
+  subjects: [],
   crop: DEFAULT_CROP,
   variants: [],
 };

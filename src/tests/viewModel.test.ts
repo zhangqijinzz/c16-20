@@ -30,16 +30,54 @@ describe('FrameSenseViewModel', () => {
     expect(repository.document.image).not.toBeNull();
   });
 
-  it('updates guides, subject, ratio, and variants', () => {
+  it('updates guides, ratio, and variants', () => {
     vm.loadDemo();
     vm.toggleGuide('center');
-    vm.markSubject(0.2, 0.8);
     vm.setRatio('1:1');
     vm.saveVariant();
     expect(vm.getSnapshot().document.guides.center).toBe(true);
-    expect(vm.getSnapshot().document.subject).toEqual({ x: 0.2, y: 0.8 });
     expect(vm.getSnapshot().document.crop.ratio).toBe('1:1');
     expect(vm.getSnapshot().document.variants).toHaveLength(1);
+  });
+
+  it('marks multiple subjects, selects and moves them independently', () => {
+    vm.loadDemo();
+    vm.addSubject(0.2, 0.8);
+    const first = vm.getSnapshot().document.subjects[0];
+    expect(vm.getSnapshot().selectedSubjectId).toBe(first.id);
+
+    vm.addSubject(0.7, 0.3);
+    const second = vm.getSnapshot().document.subjects[1];
+    expect(vm.getSnapshot().document.subjects).toHaveLength(2);
+    expect(vm.getSnapshot().selectedSubjectId).toBe(second.id);
+
+    vm.moveSubject(first.id, 0.25, 0.75);
+    const subjects = vm.getSnapshot().document.subjects;
+    expect(subjects[0]).toEqual({ id: first.id, x: 0.25, y: 0.75 });
+    expect(subjects[1]).toEqual({ id: second.id, x: 0.7, y: 0.3 });
+  });
+
+  it('removes one subject and clears the selection only when needed', () => {
+    vm.loadDemo();
+    vm.addSubject(0.2, 0.8);
+    const first = vm.getSnapshot().document.subjects[0];
+    vm.addSubject(0.7, 0.3);
+    const second = vm.getSnapshot().document.subjects[1];
+
+    vm.selectSubject(first.id);
+    vm.removeSubject(first.id);
+    expect(vm.getSnapshot().document.subjects).toEqual([{ id: second.id, x: 0.7, y: 0.3 }]);
+    expect(vm.getSnapshot().selectedSubjectId).toBeNull();
+  });
+
+  it('clears every subject at once and persists the empty list', () => {
+    vm.loadDemo();
+    vm.addSubject(0.2, 0.8);
+    vm.addSubject(0.7, 0.3);
+    vm.clearSubjects();
+    expect(vm.getSnapshot().document.subjects).toEqual([]);
+    expect(vm.getSnapshot().selectedSubjectId).toBeNull();
+    expect(repository.document.subjects).toEqual([]);
   });
 
   it('keeps edits in memory and reports persistence failure', () => {

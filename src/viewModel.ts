@@ -1,13 +1,13 @@
 import { useState, useSyncExternalStore } from 'react';
-import { cropForRatio, makeVariant, moveCrop, resizeCrop } from './domain';
-import { EMPTY_DOCUMENT, type FrameDocument, type GuideKey, type Ratio, type ViewState } from './model';
+import { createSubject, cropForRatio, makeVariant, moveCrop, moveSubject, removeSubject, resizeCrop } from './domain';
+import { EMPTY_DOCUMENT, type FrameDocument, type GuideKey, type Ratio, type SubjectPoint, type ViewState } from './model';
 import type { FrameRepository } from './repository';
 import type { ImageService } from './service';
 
 type Listener = () => void;
 
 export class FrameSenseViewModel {
-  private state: ViewState = { phase: 'loading', document: structuredClone(EMPTY_DOCUMENT), compareOpen: false, notice: '', error: null };
+  private state: ViewState = { phase: 'loading', document: structuredClone(EMPTY_DOCUMENT), compareOpen: false, selectedSubjectId: null, notice: '', error: null };
   private readonly listeners = new Set<Listener>();
 
   constructor(private readonly repository: FrameRepository, private readonly imageService: ImageService) {}
@@ -37,7 +37,7 @@ export class FrameSenseViewModel {
     this.patch({ phase: 'loading', notice: '正在恢复上次工作状态…', error: null });
     try {
       const document = this.repository.load();
-      this.patch({ document, phase: document.image ? 'editing' : 'ready', notice: document.image ? '已恢复上次工作状态' : '欢迎来到 FrameSense，先载入示例或导入图片。' });
+      this.patch({ document, phase: document.image ? 'editing' : 'ready', selectedSubjectId: null, notice: document.image ? '已恢复上次工作状态' : '欢迎来到 FrameSense，先载入示例或导入图片。' });
     } catch {
       this.patch({ phase: 'error', notice: '未能读取历史状态，可继续新建工作。', error: '本地数据读取失败。' });
     }
@@ -49,6 +49,7 @@ export class FrameSenseViewModel {
       const image = await this.imageService.readFile(file);
       const document: FrameDocument = { ...structuredClone(EMPTY_DOCUMENT), image };
       this.persist(document, '图片已载入，可以开始构图。');
+      this.patch({ selectedSubjectId: null });
     } catch (error) {
       this.patch({ phase: 'error', error: error instanceof Error ? error.message : '图片载入失败。' });
     }
@@ -56,6 +57,7 @@ export class FrameSenseViewModel {
 
   loadDemo(): void {
     this.persist({ ...structuredClone(EMPTY_DOCUMENT), image: this.imageService.demo() }, '示例图片已载入。');
+    this.patch({ selectedSubjectId: null });
   }
 
   toggleGuide(guide: GuideKey): void {
@@ -78,8 +80,32 @@ export class FrameSenseViewModel {
     this.persist({ ...this.state.document, crop: resizeCrop(this.state.document.crop, width, height) }, '裁切范围已调整。');
   }
 
-  markSubject(x: number, y: number): void {
-    this.persist({ ...this.state.document, subject: { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) } }, '主体标记已更新。');
+  addSubject(x: number, y: number): void {
+    const subject: SubjectPoint = createSubject({ x, y });
+    this.persist({ ...this.state.document, subjects: [...this.state.document.subjects, subject] }, `已添加重点标记 ${this.state.document.subjects.length + 1}。`);
+    this.patch({ selectedSubjectId: subject.id });
+  }
+
+  moveSubject(id: string, x: number, y: number): void {
+    if (!this.state.document.subjects.some((subject) => subject.id === id)) return;
+    this.persist({ ...this.state.document, subjects: moveSubject(this.state.document.subjects, id, { x, y }) }, '重点位置已微调。');
+  }
+
+  selectSubject(id: string | null): void {
+    this.patch({ selectedSubjectId: id });
+  }
+
+  removeSubject(id: string): void {
+    if (!this.state.document.subjects.some((subject) => subject.id === id)) return;
+    const next = removeSubject(this.state.document.subjects, id);
+    this.persist({ ...this.state.document, subjects: next }, '已删除该重点标记。');
+    this.patch({ selectedSubjectId: this.state.selectedSubjectId === id ? null : this.state.selectedSubjectId });
+  }
+
+  clearSubjects(): void {
+    if (this.state.document.subjects.length === 0) return;
+    this.persist({ ...this.state.document, subjects: [] }, '已清空全部重点标记。');
+    this.patch({ selectedSubjectId: null });
   }
 
   saveVariant(): void {
